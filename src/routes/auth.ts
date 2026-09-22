@@ -2,14 +2,20 @@ import { Router } from 'express';
 import { oauthAuthRouter } from '../auth/oauth-auth.js';
 import { passwordAuthRouter } from '../auth/password-auth.js';
 import { config } from '../config.js';
-import { issueCsrfToken } from '../middleware/csrf.js';
+import { clearCsrfToken, issueCsrfToken } from '../middleware/csrf.js';
 
 export const authRouter = Router();
 
 authRouter.get('/csrf', issueCsrfToken);
 
 authRouter.get('/status', (req, res) => {
-  if (!req.session.tokens) {
+  res.set('Cache-Control', 'no-store');
+  const tokens = req.session.tokens;
+  // "Authenticated" means the session can still get a usable access token, either
+  // because the current one hasn't expired or because it can be refreshed — mirrors
+  // ensureFreshTokens' notion of a usable session, not just raw token presence.
+  const hasUsableSession = !!tokens && (Date.now() < tokens.expiresAt || !!tokens.refreshToken);
+  if (!hasUsableSession) {
     return res.json({ authenticated: false });
   }
   res.json({
@@ -20,6 +26,7 @@ authRouter.get('/status', (req, res) => {
 });
 
 authRouter.post('/logout', (req, res, next) => {
+  clearCsrfToken(req, res);
   req.session.destroy((err) => {
     res.clearCookie(config.session.cookieName);
     if (err) return next(err);

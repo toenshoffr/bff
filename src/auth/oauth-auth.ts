@@ -2,12 +2,23 @@ import { createHash, randomBytes } from 'node:crypto';
 import axios from 'axios';
 import { Router } from 'express';
 import { config } from '../config.js';
+import { rotateCsrfToken } from '../middleware/csrf.js';
 import { normalizeOAuthTokenResponse } from './token-service.js';
 
 export const oauthAuthRouter = Router();
 
 function base64url(input: Buffer): string {
   return input.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+/**
+ * Only same-origin, path-absolute redirects are allowed post-login. Rejects anything
+ * that could send the browser off-site after a real login at the IdP — an
+ * absolute/protocol-relative URL (`https://evil.example/...`, `//evil.example/...`)
+ * or a backslash variant some browsers still treat as protocol-relative (`/\evil...`).
+ */
+function isSafeRedirect(path: string): boolean {
+  return path.startsWith('/') && !path.startsWith('//') && !path.startsWith('/\\');
 }
 
 /**
@@ -18,7 +29,8 @@ oauthAuthRouter.get('/login', (req, res) => {
   const state = base64url(randomBytes(16));
   const codeVerifier = base64url(randomBytes(32));
   const codeChallenge = base64url(createHash('sha256').update(codeVerifier).digest());
-  const redirectTo = typeof req.query.redirectTo === 'string' ? req.query.redirectTo : undefined;
+  const redirectToParam = typeof req.query.redirectTo === 'string' ? req.query.redirectTo : undefined;
+  const redirectTo = redirectToParam && isSafeRedirect(redirectToParam) ? redirectToParam : undefined;
 
   req.session.oauthFlow = { state, codeVerifier, redirectTo };
 
@@ -74,6 +86,9 @@ oauthAuthRouter.get('/callback', async (req, res, next) => {
       if (err) return next(err);
       req.session.authMethod = 'oauth';
       req.session.tokens = tokens;
+      // The pre-login CSRF token (if any) belonged to an anonymous session that no
+      // longer exists after regenerate(); issue a fresh one bound to the new session.
+      rotateCsrfToken(req, res);
       req.session.save((saveErr) => {
         if (saveErr) return next(saveErr);
         res.redirect(flow.redirectTo ?? config.oauth.postLoginRedirect);

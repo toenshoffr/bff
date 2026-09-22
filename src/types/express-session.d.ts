@@ -10,6 +10,7 @@ declare module 'express-session' {
       expiresAt: number;
     };
     user?: Record<string, unknown>;
+    csrfToken?: string;
     oauthFlow?: {
       state: string;
       codeVerifier: string;

@@ -102,14 +102,25 @@ with a readable error instead of a runtime crash later.
 ## CSRF
 
 Cookies are the auth mechanism, so state-changing requests are protected with
-a stateless double-submit cookie: call `GET /auth/csrf` once, then send the
-returned token back as an `X-CSRF-Token` header on every `POST`/`PUT`/
-`PATCH`/`DELETE` (including `/auth/login` and calls proxied through `/api`).
+a double-submit cookie: call `GET /auth/csrf` once, then send the returned
+token back as an `X-CSRF-Token` header on every `POST`/`PUT`/`PATCH`/`DELETE`
+(including `/auth/login` and calls proxied through `/api`). The token is
+generated server-side and bound to the session (not merely echoed back from
+whatever the client sent), and is rotated whenever the session's identity
+changes — on login and on logout — so a token observed before authentication
+can't be replayed after it.
 
 For quick local testing with tools like curl/Postman where fetching the CSRF
 token first is inconvenient, set `CSRF_PROTECTION_ENABLED=false` in `.env`.
 This disables the check entirely — it logs a warning on startup as a
-reminder, and must never be set in a deployed environment.
+reminder, and is refused at startup when `NODE_ENV=production`.
+
+## Login rate limiting
+
+`POST /auth/login` is throttled per (client IP + attempted username) via
+`RATE_LIMIT_LOGIN_MAX` / `RATE_LIMIT_LOGIN_WINDOW_MS` (default 10 attempts
+per 60s) to slow down credential-stuffing/brute-force attempts against the
+BFF, which is the internet-facing surface for the upstream login endpoint.
 
 ## Angular integration notes
 
@@ -136,4 +147,11 @@ reminder, and must never be set in a deployed environment.
   cookie is only ever sent over HTTPS.
 - `COOKIE_SAME_SITE=none` is only needed if the Angular app and BFF are on
   different sites; prefer serving them from the same site (even if different
-  subdomains/ports) and `lax`/`strict` where possible.
+  subdomains/ports) and `lax`/`strict` where possible. `COOKIE_SAME_SITE=none`
+  with `COOKIE_SECURE=false` is rejected at startup — browsers drop that
+  combination anyway.
+- Set `TRUST_PROXY` to the number of reverse proxies actually in front of the
+  BFF (e.g. `1` behind a single load balancer). It defaults to `false`
+  (trust none), which is safest if the BFF might ever be reached directly —
+  otherwise a client can spoof `X-Forwarded-Proto`/`X-Forwarded-For` and
+  fool `secure` cookies, `req.protocol`, and `req.ip`.
