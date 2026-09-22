@@ -92,6 +92,7 @@ with a readable error instead of a runtime crash later.
 |---|---|
 | `GET /healthz` | Liveness check |
 | `GET /auth/csrf` | Issues a CSRF token (cookie + JSON body) |
+| `GET /auth/methods` | `{ methods }` — which login flows are enabled (`password`, `oauth`), for the frontend to render |
 | `GET /auth/status` | `{ authenticated, authMethod, user }` for the current session |
 | `POST /auth/login` | Username/password login (if `password` enabled) |
 | `GET /auth/oauth/login` | Starts the OAuth Authorization Code + PKCE flow (if `oauth` enabled) |
@@ -129,6 +130,10 @@ BFF, which is the internet-facing surface for the upstream login endpoint.
   the SPA's API base URL to the BFF's origin, not the Spring Boot API directly.
 - Fetch `/auth/csrf` on app bootstrap and attach `X-CSRF-Token` via an
   `HttpInterceptor` for mutating requests.
+- Fetch `/auth/methods` on the login page to decide which login UI to show
+  (e.g. a username/password form, an "Sign in with SSO" button, or both) —
+  it reflects the server's `AUTH_METHODS` config rather than hardcoding it
+  in the SPA.
 - Password login: `POST /auth/login` with the credentials; on success, call
   `/auth/status` (or read the response body) to get the current user.
 - OAuth login: navigate the browser to `/auth/oauth/login` (a full redirect,
