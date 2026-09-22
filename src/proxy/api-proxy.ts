@@ -13,6 +13,18 @@ const proxy = createProxyMiddleware({
       proxyReq.setHeader('Authorization', `Bearer ${token}`);
     }
   },
+  // The browser only ever talks to the BFF, never directly to the upstream API, so
+  // CORS is decided solely by our own `cors()` middleware. Strip any CORS headers
+  // the upstream sends back — otherwise they overwrite (not merge with) the ones
+  // the BFF already set, e.g. an upstream `Access-Control-Allow-Origin: *` breaks
+  // credentialed requests from the frontend.
+  onProxyRes: (proxyRes) => {
+    for (const header of Object.keys(proxyRes.headers)) {
+      if (header.toLowerCase().startsWith('access-control-')) {
+        delete proxyRes.headers[header];
+      }
+    }
+  },
 });
 
 /**
