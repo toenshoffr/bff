@@ -8,6 +8,20 @@ export const authRouter = Router();
 
 authRouter.get('/csrf', issueCsrfToken);
 
+// Public, unauthenticated: lets the frontend discover which login flows to render
+// (e.g. a username/password form vs. an "Sign in with SSO" button) without hardcoding
+// AUTH_METHODS on the client.
+authRouter.get('/methods', (_req, res) => {
+  const methods: Array<{ type: 'password' | 'oauth'; loginUrl?: string }> = [];
+  if (config.authMethods.includes('password')) {
+    methods.push({ type: 'password' });
+  }
+  if (config.authMethods.includes('oauth')) {
+    methods.push({ type: 'oauth', loginUrl: '/auth/oauth/login' });
+  }
+  res.json({ methods });
+});
+
 authRouter.get('/status', (req, res) => {
   res.set('Cache-Control', 'no-store');
   const tokens = req.session.tokens;
