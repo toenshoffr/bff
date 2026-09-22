@@ -34,6 +34,9 @@ const envSchema = z
     COOKIE_SAME_SITE: z.enum(['lax', 'strict', 'none']).default('lax'),
     COOKIE_MAX_AGE_MS: z.coerce.number().default(1000 * 60 * 60 * 8),
 
+    // Testing escape hatch only — never disable in production.
+    CSRF_PROTECTION_ENABLED: boolFromEnv(true),
+
     PASSWORD_LOGIN_PATH: z.string().default('/api/auth/login'),
     PASSWORD_REFRESH_PATH: z.string().default('/api/auth/refresh'),
 
@@ -100,6 +103,7 @@ export const config = {
     cookieSecure: parsed.COOKIE_SECURE,
     cookieSameSite: parsed.COOKIE_SAME_SITE,
     cookieMaxAgeMs: parsed.COOKIE_MAX_AGE_MS,
+    csrfProtectionEnabled: parsed.CSRF_PROTECTION_ENABLED,
   },
   password: {
     loginPath: parsed.PASSWORD_LOGIN_PATH,

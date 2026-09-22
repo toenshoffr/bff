@@ -38,7 +38,11 @@ export function createApp() {
     }),
   );
 
-  app.use(csrfProtection);
+  if (config.session.csrfProtectionEnabled) {
+    app.use(csrfProtection);
+  } else {
+    console.warn('CSRF_PROTECTION_ENABLED=false — CSRF protection is DISABLED. Testing only, never in production.');
+  }
 
   app.get('/healthz', (_req, res) => res.json({ status: 'ok' }));
 

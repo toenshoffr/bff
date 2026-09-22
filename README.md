@@ -106,6 +106,11 @@ a stateless double-submit cookie: call `GET /auth/csrf` once, then send the
 returned token back as an `X-CSRF-Token` header on every `POST`/`PUT`/
 `PATCH`/`DELETE` (including `/auth/login` and calls proxied through `/api`).
 
+For quick local testing with tools like curl/Postman where fetching the CSRF
+token first is inconvenient, set `CSRF_PROTECTION_ENABLED=false` in `.env`.
+This disables the check entirely — it logs a warning on startup as a
+reminder, and must never be set in a deployed environment.
+
 ## Angular integration notes
 
 - Configure `HttpClient` to send cookies: `withCredentials: true` on requests
