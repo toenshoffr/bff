@@ -1,8 +1,10 @@
+import axios from 'axios';
 import cookieParser from 'cookie-parser';
 import cors from 'cors';
 import express from 'express';
 import session from 'express-session';
 import helmet from 'helmet';
+import https from 'node:https';
 import { config } from './config.js';
 import { csrfProtection } from './middleware/csrf.js';
 import { errorHandler } from './middleware/error-handler.js';
@@ -44,6 +46,13 @@ export function createApp() {
     app.use(csrfProtection);
   } else {
     console.warn('CSRF_PROTECTION_ENABLED=false — CSRF protection is DISABLED. Testing only, never in production.');
+  }
+
+  if (!config.tlsRejectUnauthorized) {
+    // Covers every outgoing axios call (password login/refresh, OAuth token
+    // endpoint); the API proxy honours the same flag via its `secure` option.
+    axios.defaults.httpsAgent = new https.Agent({ rejectUnauthorized: false });
+    console.warn('TLS_REJECT_UNAUTHORIZED=false — TLS certificate verification is DISABLED. Testing only, never in production.');
   }
 
   app.get('/healthz', (_req, res) => res.json({ status: 'ok' }));

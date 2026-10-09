@@ -6,6 +6,7 @@ import { config } from '../config.js';
 const proxy = createProxyMiddleware({
   target: config.api.baseUrl,
   changeOrigin: true,
+  secure: config.tlsRejectUnauthorized,
   pathRewrite: { [`^${config.api.proxyPath}`]: '' },
   onProxyReq: (proxyReq, req) => {
     const token = (req as unknown as { bffAccessToken?: string }).bffAccessToken;

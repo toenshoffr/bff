@@ -116,6 +116,16 @@ token first is inconvenient, set `CSRF_PROTECTION_ENABLED=false` in `.env`.
 This disables the check entirely — it logs a warning on startup as a
 reminder, and is refused at startup when `NODE_ENV=production`.
 
+## TLS verification for upstream calls
+
+If the Spring Boot API or the IdP uses a self-signed certificate or an
+incomplete chain (`UNABLE_TO_VERIFY_LEAF_SIGNATURE`), set
+`TLS_REJECT_UNAUTHORIZED=false` in `.env` to skip certificate verification for
+all outgoing requests (axios calls and the `/api` proxy). Like the CSRF switch,
+it logs a warning on startup and is refused when `NODE_ENV=production`. The
+proper fix is to have the server send its full chain, or to trust the CA via
+`NODE_EXTRA_CA_CERTS=/path/to/ca.pem`.
+
 ## Login rate limiting
 
 `POST /auth/login` is throttled per (client IP + attempted username) via

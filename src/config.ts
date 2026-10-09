@@ -46,6 +46,12 @@ const envSchema = z
     // Testing escape hatch only — refused at startup when NODE_ENV=production.
     CSRF_PROTECTION_ENABLED: boolFromEnv(true),
 
+    // Testing escape hatch only — refused at startup when NODE_ENV=production.
+    // false skips TLS certificate verification for outgoing requests (Spring Boot
+    // API, proxy, OAuth token endpoint), e.g. to get past
+    // UNABLE_TO_VERIFY_LEAF_SIGNATURE / self-signed certs in a dev environment.
+    TLS_REJECT_UNAUTHORIZED: boolFromEnv(true),
+
     // POST /auth/login throttling (per IP + attempted username).
     RATE_LIMIT_LOGIN_MAX: z.coerce.number().default(10),
     RATE_LIMIT_LOGIN_WINDOW_MS: z.coerce.number().default(60_000),
@@ -86,6 +92,14 @@ const envSchema = z
         code: z.ZodIssueCode.custom,
         message: 'CSRF_PROTECTION_ENABLED must not be false when NODE_ENV=production',
         path: ['CSRF_PROTECTION_ENABLED'],
+      });
+    }
+
+    if (val.NODE_ENV === 'production' && !val.TLS_REJECT_UNAUTHORIZED) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'TLS_REJECT_UNAUTHORIZED must not be false when NODE_ENV=production',
+        path: ['TLS_REJECT_UNAUTHORIZED'],
       });
     }
 
@@ -132,6 +146,7 @@ export const config = {
   isProduction: parsed.NODE_ENV === 'production',
   frontendOrigin: parsed.FRONTEND_ORIGIN,
   trustProxy: parseTrustProxy(parsed.TRUST_PROXY),
+  tlsRejectUnauthorized: parsed.TLS_REJECT_UNAUTHORIZED,
   api: {
     baseUrl: parsed.API_BASE_URL,
     timeoutMs: parsed.API_TIMEOUT_MS,
