@@ -1,6 +1,8 @@
 import axios from 'axios';
 import type { Request } from 'express';
+import type { SessionData } from 'express-session';
 import { config } from '../config.js';
+import { refreshLock, sessionStore } from '../session/session-backend.js';
 
 export interface TokenSet {
   accessToken: string;
@@ -46,33 +48,60 @@ export function normalizeOAuthTokenResponse(data: any, previousRefreshToken?: st
   };
 }
 
+const isFresh = (tokens: TokenSet) => Date.now() < tokens.expiresAt - REFRESH_SKEW_MS;
+
 /**
  * Returns a currently-valid access token for the request's session, transparently
  * refreshing it (via the same auth method the session was established with) when
  * it is expired or about to expire. Throws UnauthenticatedError if there is no
  * usable session.
+ *
+ * Refreshes are serialized per session (and across BFF instances when Redis is the
+ * session store). SPAs fire parallel requests, and with refresh-token rotation a
+ * second refresh using the already-consumed token would be rejected and log the user
+ * out. Inside the lock the session is re-read from the store, so a request that
+ * waited simply picks up the tokens its predecessor just persisted.
  */
 export async function ensureFreshTokens(req: Request): Promise<string> {
   const tokens = req.session.tokens;
   if (!tokens) {
     throw new UnauthenticatedError();
   }
-
-  if (Date.now() < tokens.expiresAt - REFRESH_SKEW_MS) {
+  if (isFresh(tokens)) {
     return tokens.accessToken;
   }
 
-  if (!tokens.refreshToken) {
-    throw new UnauthenticatedError('Session expired');
-  }
+  return refreshLock.run(req.sessionID, async () => {
+    const stored = await loadStoredSession(req.sessionID);
+    // Gone (e.g. logout while we waited) or logged out: never resurrect the session.
+    if (!stored?.tokens) {
+      throw new UnauthenticatedError();
+    }
+    if (isFresh(stored.tokens)) {
+      req.session.tokens = stored.tokens;
+      return stored.tokens.accessToken;
+    }
+    if (!stored.tokens.refreshToken) {
+      throw new UnauthenticatedError('Session expired');
+    }
 
-  const refreshed =
-    req.session.authMethod === 'oauth'
-      ? await refreshOAuthTokens(tokens.refreshToken)
-      : await refreshPasswordTokens(tokens.refreshToken);
+    const refreshed =
+      stored.authMethod === 'oauth'
+        ? await refreshOAuthTokens(stored.tokens.refreshToken)
+        : await refreshPasswordTokens(stored.tokens.refreshToken);
 
-  req.session.tokens = refreshed;
-  return refreshed.accessToken;
+    // Persist immediately rather than at response end: requests that start while this
+    // one is still streaming its response must already see the rotated refresh token.
+    req.session.tokens = refreshed;
+    await new Promise<void>((resolve, reject) => req.session.save((err) => (err ? reject(err) : resolve())));
+    return refreshed.accessToken;
+  });
+}
+
+function loadStoredSession(sid: string): Promise<SessionData | null> {
+  return new Promise((resolve, reject) => {
+    sessionStore.get(sid, (err, data) => (err ? reject(err) : resolve(data ?? null)));
+  });
 }
 
 async function refreshPasswordTokens(refreshToken: string): Promise<TokenSet> {

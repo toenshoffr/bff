@@ -43,6 +43,19 @@ const envSchema = z
     COOKIE_SAME_SITE: z.enum(['lax', 'strict', 'none']).default('lax'),
     COOKIE_MAX_AGE_MS: z.coerce.number().default(1000 * 60 * 60 * 8),
 
+    // Where session data (incl. access/refresh tokens) is stored server-side.
+    // "memory" is single-instance and lost on restart: local dev only.
+    SESSION_STORE: z.enum(['memory', 'redis']).default('memory'),
+    REDIS_URL: z.string().optional(),
+    REDIS_KEY_PREFIX: z.string().default('bff:sess:'),
+    // Encrypts session data (AES-256-GCM) before it is written to the store, so
+    // tokens aren't readable by anyone with access to Redis / its backups.
+    SESSION_ENCRYPTION_ENABLED: boolFromEnv(true),
+    // Dedicated key material (>= 32 chars, e.g. `openssl rand -base64 48`). Must differ
+    // from SESSION_SECRET. Optional for the memory store (derived from SESSION_SECRET),
+    // required for redis.
+    SESSION_ENCRYPTION_KEY: z.string().min(32, 'SESSION_ENCRYPTION_KEY must be at least 32 characters').optional(),
+
     // Testing escape hatch only — refused at startup when NODE_ENV=production.
     CSRF_PROTECTION_ENABLED: boolFromEnv(true),
 
@@ -87,6 +100,31 @@ const envSchema = z
         message: 'CSRF_PROTECTION_ENABLED must not be false when NODE_ENV=production',
         path: ['CSRF_PROTECTION_ENABLED'],
       });
+    }
+
+    if (val.SESSION_STORE === 'redis' && !val.REDIS_URL) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'REDIS_URL is required when SESSION_STORE=redis',
+        path: ['REDIS_URL'],
+      });
+    }
+
+    if (val.SESSION_ENCRYPTION_ENABLED) {
+      if (val.SESSION_STORE === 'redis' && !val.SESSION_ENCRYPTION_KEY) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'SESSION_ENCRYPTION_KEY is required when SESSION_STORE=redis and encryption is enabled',
+          path: ['SESSION_ENCRYPTION_KEY'],
+        });
+      }
+      if (val.SESSION_ENCRYPTION_KEY && val.SESSION_ENCRYPTION_KEY === val.SESSION_SECRET) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'SESSION_ENCRYPTION_KEY must differ from SESSION_SECRET',
+          path: ['SESSION_ENCRYPTION_KEY'],
+        });
+      }
     }
 
     if (val.COOKIE_SAME_SITE === 'none' && !val.COOKIE_SECURE) {
@@ -145,6 +183,13 @@ export const config = {
     cookieSameSite: parsed.COOKIE_SAME_SITE,
     cookieMaxAgeMs: parsed.COOKIE_MAX_AGE_MS,
     csrfProtectionEnabled: parsed.CSRF_PROTECTION_ENABLED,
+    store: parsed.SESSION_STORE,
+    redisUrl: parsed.REDIS_URL,
+    redisKeyPrefix: parsed.REDIS_KEY_PREFIX,
+    encryptionEnabled: parsed.SESSION_ENCRYPTION_ENABLED,
+    // Falls back to the cookie secret only for the memory store (see schema above);
+    // the HKDF "info" label in encrypted-store.ts keeps the derived key distinct.
+    encryptionKey: parsed.SESSION_ENCRYPTION_KEY ?? parsed.SESSION_SECRET,
   },
   rateLimit: {
     loginMax: parsed.RATE_LIMIT_LOGIN_MAX,

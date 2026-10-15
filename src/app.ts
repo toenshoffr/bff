@@ -8,6 +8,7 @@ import { csrfProtection } from './middleware/csrf.js';
 import { errorHandler } from './middleware/error-handler.js';
 import { apiProxy } from './proxy/api-proxy.js';
 import { authRouter } from './routes/auth.js';
+import { sessionStore } from './session/session-backend.js';
 
 export function createApp() {
   const app = express();
@@ -25,6 +26,7 @@ export function createApp() {
   app.use(
     session({
       name: config.session.cookieName,
+      store: sessionStore,
       secret: config.session.secret,
       resave: false,
       saveUninitialized: false,
@@ -34,9 +36,8 @@ export function createApp() {
         sameSite: config.session.cookieSameSite,
         maxAge: config.session.cookieMaxAgeMs,
       },
-      // Default MemoryStore is fine for local dev only. For production, plug in a
-      // shared store (e.g. connect-redis) so sessions survive restarts and work
-      // across multiple BFF instances.
+      // Store (memory or Redis, optionally AES-GCM encrypted) is chosen via
+      // SESSION_STORE / SESSION_ENCRYPTION_* — see session/session-backend.ts.
     }),
   );
 

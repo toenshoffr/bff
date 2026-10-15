@@ -67,6 +67,9 @@ full list with defaults). Key ones:
 | `AUTH_METHODS` | `password`, `oauth`, or `password,oauth` |
 | `SESSION_SECRET` | Secret used to sign the session cookie |
 | `PASSWORD_LOGIN_PATH` / `PASSWORD_REFRESH_PATH` | Spring Boot endpoints the BFF calls for username/password login/refresh |
+| `SESSION_STORE` | `memory` (default, dev only) or `redis` |
+| `REDIS_URL` / `REDIS_KEY_PREFIX` | Redis connection (required for `redis`) / key prefix (default `bff:sess:`) |
+| `SESSION_ENCRYPTION_ENABLED` / `SESSION_ENCRYPTION_KEY` | AES-256-GCM encryption of session data in the store (default on); key required for `redis` |
 | `OAUTH_*` | Authorization/token endpoints, client id/secret, redirect URI, scopes |
 
 Config is validated at startup with `zod`; missing/invalid values fail fast
@@ -144,10 +147,23 @@ BFF, which is the internet-facing surface for the upstream login endpoint.
 
 ## Production notes
 
-- The default session store is in-memory and single-instance only. For
-  production, swap in a shared store (e.g. `connect-redis`) so sessions
-  survive restarts and work across multiple BFF instances behind a load
-  balancer.
+- Use `SESSION_STORE=redis` (plus `REDIS_URL`) so sessions survive restarts and
+  work across multiple BFF instances. The default in-memory store is for local
+  development only (a warning is logged if it is used with `NODE_ENV=production`).
+- **Session encryption**: with `SESSION_ENCRYPTION_ENABLED=true` (default) the
+  whole session (tokens, user, CSRF token) is encrypted with AES-256-GCM before it
+  is written to the store; only the cookie expiry stays readable (needed for TTLs).
+  The session id is bound into the ciphertext, so a blob can't be copied to another
+  session. Provide a dedicated `SESSION_ENCRYPTION_KEY` (>= 32 chars, different from
+  `SESSION_SECRET`, e.g. `openssl rand -base64 48`). Changing the key invalidates all
+  existing sessions (users must log in again) — there is no key-rotation overlap.
+  Redis connection security (TLS via `rediss://`, auth, network isolation) is still
+  your responsibility.
+- **Refresh race protection**: token refreshes are serialized per session (in-process
+  queue plus a Redis lock across instances). A request that waited re-reads the
+  session from the store and reuses the tokens its predecessor just saved, so
+  parallel SPA requests trigger exactly one refresh — important with refresh-token
+  rotation, where a second use of a consumed token would log the user out.
 - Run behind TLS and keep `COOKIE_SECURE=true` (the default) so the session
   cookie is only ever sent over HTTPS.
 - `COOKIE_SAME_SITE=none` is only needed if the Angular app and BFF are on
